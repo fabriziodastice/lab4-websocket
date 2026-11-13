@@ -8,7 +8,7 @@ import jakarta.websocket.ContainerProvider
 import jakarta.websocket.OnMessage
 import jakarta.websocket.Session
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Disabled
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
@@ -36,7 +36,6 @@ class ElizaServerTest {
         assertEquals("The doctor is in.", list[0])
     }
 
-    @Disabled // Remove this line when you implement onChat
     @Test
     fun onChat() {
         logger.info { "Test thread" }
@@ -48,9 +47,21 @@ class ElizaServerTest {
         latch.await()
         val size = list.size
         // 1. EXPLAIN WHY size = list.size IS NECESSARY
+        // Capturing the size in a local immutable variable immediately after the latch unblocks
+        // prevents concurrent mutations. If we read list.size directly during the assertion,
+        // its value could change mid-evaluation due to the arrival of the 5th message on the async thread.
+
         // 2. REPLACE BY assertXXX expression that checks an interval; assertEquals must not be used;
+        assertTrue(size in 4..5, "list size should be 4 or 5 depending on race condition")
+
         // 3. EXPLAIN WHY assertEquals CANNOT BE USED AND WHY WE SHOULD CHECK THE INTERVAL
+        // We cannot use assertEquals(4, size) because the server sends the 5th message ("---")
+        // immediately after the 4th. Depending on the OS scheduler, when the main thread evaluates
+        // the size, the async thread might or might not have processed the final packet.
+        // Checking the interval 4..5 prevents flaky tests.
+
         // 4. COMPLETE assertEquals(XXX, list[XXX])
+        assertEquals("We were discussing you, not me.", list[3])
     }
 }
 
@@ -73,7 +84,6 @@ class ComplexClient(
     private val latch: CountDownLatch,
 ) {
     @OnMessage
-    @Suppress("UNUSED_PARAMETER") // Remove this line when you implement onMessage
     fun onMessage(
         message: String,
         session: Session,
@@ -82,8 +92,11 @@ class ComplexClient(
         list.add(message)
         latch.countDown()
         // 5. COMPLETE if (expression) {
-        // 6. COMPLETE   sentence
-        // }
+        if (list.size == 3) {
+            // 6. COMPLETE   sentence
+            session.basicRemote.sendText("you're right")
+            // }
+        }
     }
 }
 
